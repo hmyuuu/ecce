@@ -4,8 +4,14 @@ use clap::{Parser, Subcommand};
 mod commands;
 mod config;
 mod utils;
+mod agent;
+mod watcher;
+mod pattern;
 
 use commands::api::{handle_api_command, ApiCommand};
+use commands::agent::{handle_agent_command, AgentCommand};
+use commands::homo::{handle_homo_command, HomoArgs};
+use commands::task::{handle_task_command, TaskCommand};
 use config::Config;
 
 #[derive(Parser)]
@@ -23,6 +29,18 @@ enum Commands {
         #[command(subcommand)]
         command: ApiCommand,
     },
+    /// Agent management for Claude Code integration
+    Agent {
+        #[command(subcommand)]
+        command: AgentCommand,
+    },
+    /// Task template management
+    Task {
+        #[command(subcommand)]
+        command: TaskCommand,
+    },
+    /// Watch file and trigger agents on pattern detection
+    Homo(HomoArgs),
 }
 
 #[tokio::main]
@@ -33,6 +51,15 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Api { command } => {
             handle_api_command(command, &mut config).await?;
+        }
+        Commands::Agent { command } => {
+            handle_agent_command(command, &mut config)?;
+        }
+        Commands::Task { command } => {
+            handle_task_command(command, &mut config)?;
+        }
+        Commands::Homo(args) => {
+            handle_homo_command(args, &config).await?;
         }
     }
 
