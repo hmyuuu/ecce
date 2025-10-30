@@ -1,0 +1,5 @@
+.claude/
+
+Cargo.lock
+/target
+.mise.toml
