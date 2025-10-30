@@ -78,6 +78,13 @@ impl FileWatcher {
         self.detector.mark_processed(content);
     }
 
+    /// Update the watcher's content to match the current file
+    pub fn update_content<P: AsRef<Path>>(&mut self, path: P) -> Result<()> {
+        let current_content = fs::read_to_string(&path).context("Failed to read file content")?;
+        self.last_content = current_content;
+        Ok(())
+    }
+
     /// Get the current file content
     pub fn current_content(&self) -> &str {
         &self.last_content

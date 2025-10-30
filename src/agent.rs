@@ -6,10 +6,17 @@ use std::io::Write;
 
 use crate::config::{Agent, Task};
 
+#[derive(Clone)]
+struct Message {
+    role: String,
+    content: String,
+}
+
 pub struct ClaudeAgent {
     claude_executable: String,
     agent: Agent,
     task: Option<Task>,
+    conversation_history: Vec<Message>,
 }
 
 impl ClaudeAgent {
@@ -18,6 +25,7 @@ impl ClaudeAgent {
             claude_executable,
             agent,
             task,
+            conversation_history: Vec::new(),
         }
     }
 
@@ -44,18 +52,31 @@ impl ClaudeAgent {
             .map(|t| t.template.as_str())
             .unwrap_or("Answer the following question by creating new slides that explain and elaborate on the concept.");
 
-        format!(
+        // Include conversation history
+        let mut prompt = String::new();
+
+        if !self.conversation_history.is_empty() {
+            prompt.push_str("## Previous Conversation:\n\n");
+            for msg in &self.conversation_history {
+                prompt.push_str(&format!("{}: {}\n\n", msg.role, msg.content));
+            }
+            prompt.push_str("---\n\n");
+        }
+
+        prompt.push_str(&format!(
             "{}\n\nContext:\n{}\n\nQuestion: {}\n\nPlease provide slide content in Markdown format.",
             template, context, question
-        )
+        ));
+
+        prompt
     }
 
     /// Call Claude Code executable to generate response
-    pub async fn generate_response(&self, question: &str) -> Result<String> {
+    pub async fn generate_response(&mut self, question: &str) -> Result<String> {
         // Load context files
         let context = self.load_context()?;
 
-        // Build prompt
+        // Build prompt with conversation history
         let user_prompt = self.build_prompt(question, &context);
 
         // Create a temporary file for the system prompt
@@ -86,8 +107,20 @@ impl ClaudeAgent {
         }
 
         let response = String::from_utf8(output.stdout)
-            .context("Failed to parse Claude Code output as UTF-8")?;
+            .context("Failed to parse Claude Code output as UTF-8")?
+            .trim()
+            .to_string();
 
-        Ok(response.trim().to_string())
+        // Save to conversation history
+        self.conversation_history.push(Message {
+            role: "User".to_string(),
+            content: question.to_string(),
+        });
+        self.conversation_history.push(Message {
+            role: "Assistant".to_string(),
+            content: response.clone(),
+        });
+
+        Ok(response)
     }
 }

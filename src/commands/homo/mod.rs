@@ -277,7 +277,7 @@ async fn watch_and_process_with_signals(
 }
 
 /// Main file watching loop
-async fn watch_and_process(file_path: &PathBuf, claude_agent: ClaudeAgent, watch_interval: u64) -> Result<()> {
+async fn watch_and_process(file_path: &PathBuf, mut claude_agent: ClaudeAgent, watch_interval: u64) -> Result<()> {
     let mut watcher = FileWatcher::with_interval(file_path, watch_interval)?;
     watcher.watch(file_path)?;
 
@@ -318,7 +318,7 @@ async fn watch_and_process(file_path: &PathBuf, claude_agent: ClaudeAgent, watch
             );
 
             // Process the pattern
-            match process_pattern(pattern, &claude_agent, file_path, &mut watcher).await {
+            match process_pattern(pattern, &mut claude_agent, file_path, &mut watcher).await {
                 Ok(_) => {
                     println!("  {}", "✅ Success".green().bold());
                 }
@@ -336,14 +336,20 @@ async fn watch_and_process(file_path: &PathBuf, claude_agent: ClaudeAgent, watch
     }
 }
 
-/// Process a single pattern: generate response and append to file
+/// Process a single pattern: generate response and replace in file
 async fn process_pattern(
     pattern: &EccePattern,
-    agent: &ClaudeAgent,
+    agent: &mut ClaudeAgent,
     file_path: &PathBuf,
     watcher: &mut FileWatcher,
 ) -> Result<()> {
     println!("  {}", "🤖 Generating response...".yellow());
+
+    // Immediately replace pattern with "generating" message
+    replace_pattern_in_file(file_path, &pattern.content, "🤖 Generating response...")?;
+
+    // Update watcher's content to avoid detecting our own change
+    watcher.update_content(file_path)?;
 
     // Call agent to generate response
     let response = agent
@@ -351,10 +357,13 @@ async fn process_pattern(
         .await
         .context("Failed to generate response from Claude API")?;
 
-    println!("  {}", "📝 Appending to file...".yellow());
+    println!("  {}", "📝 Replacing with response...".yellow());
 
-    // Append response to file
-    append_response_to_file(file_path, &response, &pattern.content)?;
+    // Replace "generating" message with actual response
+    replace_pattern_in_file(file_path, "🤖 Generating response...", &response)?;
+
+    // Update watcher's content again
+    watcher.update_content(file_path)?;
 
     // Mark pattern as processed to avoid reprocessing
     watcher.mark_processed(&pattern.content);
@@ -362,11 +371,11 @@ async fn process_pattern(
     Ok(())
 }
 
-/// Replace the pattern in the file with the generated response
-fn append_response_to_file(
+/// Replace a pattern in the file with new content
+fn replace_pattern_in_file(
     file_path: &PathBuf,
-    response: &str,
-    original_prompt: &str,
+    old_text: &str,
+    new_text: &str,
 ) -> Result<()> {
     // Read the entire file
     let content = std::fs::read_to_string(file_path)
@@ -376,19 +385,19 @@ fn append_response_to_file(
     let mut replaced = false;
 
     // Try to find and replace inline pattern: ecce <prompt> ecce
-    // Try with various whitespace patterns
     let patterns_to_try = vec![
-        format!("ecce {} ecce", original_prompt),
-        format!("ecce  {}  ecce", original_prompt),
-        format!("ecce\n{}\necce", original_prompt),
-        format!("ecce {} ecce", original_prompt.trim()),
-        format!("ecce  {}  ecce", original_prompt.trim()),
+        format!("ecce {} ecce", old_text),
+        format!("ecce  {}  ecce", old_text),
+        format!("ecce\n{}\necce", old_text),
+        format!("ecce {} ecce", old_text.trim()),
+        format!("ecce  {}  ecce", old_text.trim()),
+        // Also try direct replacement (for replacing "generating" message)
+        old_text.to_string(),
     ];
 
     for pattern in &patterns_to_try {
         if content.contains(pattern) {
-            println!("  {} Found inline pattern", "✓".green());
-            new_content = content.replace(pattern, response);
+            new_content = content.replace(pattern, new_text);
             replaced = true;
             break;
         }
@@ -397,15 +406,14 @@ fn append_response_to_file(
     // If inline pattern not found, try code block pattern
     if !replaced {
         let block_patterns = vec![
-            format!("```ecce\n{}\n```", original_prompt),
-            format!("```ecce\n{}\n```", original_prompt.trim()),
-            format!("```ecce\n  {}\n```", original_prompt.trim()),
+            format!("```ecce\n{}\n```", old_text),
+            format!("```ecce\n{}\n```", old_text.trim()),
+            format!("```ecce\n  {}\n```", old_text.trim()),
         ];
 
         for pattern in &block_patterns {
             if content.contains(pattern) {
-                println!("  {} Found code block pattern", "✓".green());
-                new_content = content.replace(pattern, response);
+                new_content = content.replace(pattern, new_text);
                 replaced = true;
                 break;
             }
@@ -413,10 +421,10 @@ fn append_response_to_file(
     }
 
     if !replaced {
-        println!("  {} Pattern not found in file, appending instead", "⚠".yellow());
-        println!("  {} Looking for: 'ecce {} ecce'", "ℹ".blue(), original_prompt);
-        // Fallback: append if pattern not found
-        new_content = format!("{}\n\n{}\n", content, response);
+        return Err(anyhow::anyhow!(
+            "Pattern not found in file: '{}'",
+            old_text
+        ));
     }
 
     // Write the modified content back
@@ -433,18 +441,15 @@ mod tests {
     use tempfile::NamedTempFile;
 
     #[test]
-    fn test_append_response_to_file() {
+    fn test_replace_pattern_in_file() {
         let mut temp = NamedTempFile::new().unwrap();
         let path = PathBuf::from(temp.path());
 
-        fs::write(&path, "Initial content\n").unwrap();
+        fs::write(&path, "ecce test prompt ecce").unwrap();
 
-        append_response_to_file(&path, "Generated response", "test prompt").unwrap();
+        replace_pattern_in_file(&path, "test prompt", "Generated response").unwrap();
 
         let content = fs::read_to_string(&path).unwrap();
-        assert!(content.contains("Initial content"));
-        assert!(content.contains("Generated response"));
-        assert!(content.contains("Generated by ecce homo"));
-        assert!(content.contains("Prompt: test prompt"));
+        assert_eq!(content, "Generated response");
     }
 }
