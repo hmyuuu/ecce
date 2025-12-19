@@ -11,6 +11,7 @@ mod pattern;
 use commands::api::{handle_api_command, ApiCommand};
 use commands::agent::{handle_agent_command, AgentCommand};
 use commands::homo::{handle_homo_command, HomoArgs};
+use commands::mcp::{handle_mcp_command, McpCommand};
 use commands::task::{handle_task_command, TaskCommand};
 use config::Config;
 
@@ -39,6 +40,11 @@ enum Commands {
         #[command(subcommand)]
         command: TaskCommand,
     },
+    /// MCP server management
+    Mcp {
+        #[command(subcommand)]
+        command: McpCommand,
+    },
     /// Watch file and trigger agents on pattern detection
     Homo(HomoArgs),
 }
@@ -57,6 +63,9 @@ async fn main() -> Result<()> {
         }
         Commands::Task { command } => {
             handle_task_command(command, &mut config)?;
+        }
+        Commands::Mcp { command } => {
+            handle_mcp_command(command, &mut config)?;
         }
         Commands::Homo(args) => {
             handle_homo_command(args, &config).await?;

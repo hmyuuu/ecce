@@ -90,3 +90,4 @@ impl FileWatcher {
         &self.last_content
     }
 }
+

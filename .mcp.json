@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "ecce": {
+      "args": [
+        "run",
+        "/Users/hmyuuu/workspace/ecce/mcp-server/dist/index.js"
+      ],
+      "command": "bun"
+    }
+  }
+}

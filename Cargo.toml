@@ -3,6 +3,14 @@ name = "ecce"
 version = "1.0.0-DEV"
 edition = "2021"
 
+[lib]
+name = "ecce"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ecce"
+path = "src/main.rs"
+
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -18,3 +26,7 @@ notify = "6.1"
 regex = "1.10"
 sha2 = "0.10"
 tempfile = "3.8"
+
+[dev-dependencies]
+mockito = "1.2"
+serial_test = "3.0"
